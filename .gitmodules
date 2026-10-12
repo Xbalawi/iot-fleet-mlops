@@ -1,0 +1,3 @@
+[submodule "vendor/iot-fleet-monitor"]
+	path = vendor/iot-fleet-monitor
+	url = https://github.com/Xbalawi/iot-fleet-monitor.git
