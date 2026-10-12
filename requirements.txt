@@ -1,0 +1,6 @@
+paho-mqtt
+
+pandas
+
+pyarrow
+pytest
