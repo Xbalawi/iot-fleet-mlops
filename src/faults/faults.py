@@ -32,6 +32,20 @@ def baseline(sensor_type, rng):
     return round(rng.uniform(low, high), 2)
 
 
+# Spike values per sensor type. Every range lies OUTSIDE the normal range.
+# Occupancy is absent on purpose: a binary sensor cannot spike.
+SPIKE_RANGES = {
+    "temperature": [(31.0, 39.0), (11.0, 17.0), (41.0, 50.0)],  # hard high, hard low, easy
+    "vibration": [(6.0, 10.0)],
+}
+
+
+def spike_value(sensor_type, rng):
+    """Return one spike reading for this sensor type."""
+    low, high = rng.choice(SPIKE_RANGES[sensor_type])
+    return round(rng.uniform(low, high), 2)
+
+
 class SensorSim:
     def __init__(self, sensor_id, sensor_type, rng, p_spike=0.02, p_drift=0.002, p_dropout=0.002):
         self.sensor_id = sensor_id
@@ -44,7 +58,7 @@ class SensorSim:
         self._fault_start = None
         self._dropout_ticks_remaining = 0
         self._drift_readings = 0
-        self._drift_baseline = None
+        # self._drift_baseline = None
 
     def step(self, now):
         """Return the reading and any fault event completed on this tick."""
@@ -57,7 +71,7 @@ class SensorSim:
             return None, None
 
         if self._state == "drifting":
-            value = self._drift_baseline + 0.05 * self._drift_readings
+            value = round(baseline(self.sensor_type, self.rng) + 0.05 * self._drift_readings, 2)            
             self._drift_readings += 1
             if self._drift_readings == 150:
                 event = FaultEvent(self.sensor_id, "drift", self._fault_start, now)
@@ -77,12 +91,13 @@ class SensorSim:
             self._state = "drifting"
             self._fault_start = now
             self._drift_readings = 1
-            self._drift_baseline = baseline(self.sensor_type, self.rng)
-            return self._drift_baseline, None
-
-        if roll < self.p_dropout + self.p_drift + self.p_spike:
-            event = FaultEvent(self.sensor_id, "spike", now, now)
-            return baseline(self.sensor_type, self.rng) + 10.0, event
+            # self._drift_baseline = baseline(self.sensor_type, self.rng)
+            return baseline(self.sensor_type, self.rng), None
+        
+        if (self.sensor_type in SPIKE_RANGES
+                and roll < self.p_dropout + self.p_drift + self.p_spike):
+                event = FaultEvent(self.sensor_id, "spike", now, now)
+                return spike_value(self.sensor_type, self.rng), event
 
         return baseline(self.sensor_type, self.rng), None
 
@@ -103,4 +118,4 @@ class SensorSim:
         self._fault_start = None
         self._dropout_ticks_remaining = 0
         self._drift_readings = 0
-        self._drift_baseline = None
+        # self._drift_baseline = None

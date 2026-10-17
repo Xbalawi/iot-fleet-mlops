@@ -1,5 +1,6 @@
 import json
 import random
+import statistics
 from datetime import datetime, timedelta, timezone
 
 from src.faults.faults import FaultEvent, NORMAL_RANGES, SensorSim
@@ -45,10 +46,33 @@ def test_spike_is_immediate_and_uses_one_fault_roll():
 
     value, event = simulator.step(now)
 
-    assert value == 10.0
+    assert value == 6.0
     assert value > NORMAL_RANGES["vibration"][1]
     assert event == FaultEvent("vib-01", "spike", now, now)
     assert rng.random_calls == 1
+
+
+def test_temperature_spikes_are_always_outside_the_normal_range():
+    now = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    low, high = NORMAL_RANGES["temperature"]
+    simulator = SensorSim("temp-01", "temperature", random.Random(1),
+                          p_spike=1.0, p_drift=0.0, p_dropout=0.0)
+
+    for _ in range(2000):
+        value, event = simulator.step(now)
+        assert event.fault_type == "spike"
+        assert not (low <= value <= high)
+
+
+def test_occupancy_never_spikes():
+    now = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    simulator = SensorSim("occ-01", "occupancy", random.Random(1),
+                          p_spike=1.0, p_drift=0.0, p_dropout=0.0)
+
+    for _ in range(500):
+        value, event = simulator.step(now)
+        assert event is None
+        assert value in (0.0, 1.0)
 
 
 def test_dropout_suppresses_exactly_ten_ticks_and_emits_on_completion():
@@ -82,7 +106,7 @@ def test_drift_returns_150_readings_and_emits_when_complete():
     previous_value = first_value
     for tick in range(1, 149):
         value, event = simulator.step(start + timedelta(seconds=tick))
-        assert value == 18.0 + 0.05 * tick
+        assert value == round(18.0 + 0.05 * tick, 2)
         assert value > previous_value
         assert event is None
         previous_value = value
@@ -90,8 +114,21 @@ def test_drift_returns_150_readings_and_emits_when_complete():
     end = start + timedelta(seconds=149)
     last_value, event = simulator.step(end)
 
-    assert last_value == 18.0 + 0.05 * 149
+    assert last_value == round(18.0 + 0.05 * 149, 2)
     assert event == FaultEvent("temp-01", "drift", start, end)
+
+
+def test_drift_keeps_the_sensor_noise():
+    start = datetime(2026, 10, 17, tzinfo=timezone.utc)
+    simulator = SensorSim("temp-01", "temperature", random.Random(3),
+                          p_spike=0.0, p_drift=1.0, p_dropout=0.0)
+
+    values = [simulator.step(start + timedelta(seconds=tick))[0] for tick in range(150)]
+    residuals = [value - 0.05 * tick for tick, value in enumerate(values)]
+
+    low, high = NORMAL_RANGES["temperature"]
+    assert all(low - 0.01 <= r <= high + 0.01 for r in residuals)
+    assert statistics.pstdev(residuals) > 2.0
 
 
 def test_same_seed_produces_identical_readings_and_events():
@@ -164,7 +201,7 @@ def test_injector_publishes_readings_and_keeps_labels_separate(tmp_path, monkeyp
             assert keepalive == 60
 
         def loop_start(self):
-            pass
+            self.on_connect(self, None, {}, 0)
 
         def loop_stop(self):
             pass
@@ -215,3 +252,75 @@ def test_injector_publishes_readings_and_keeps_labels_separate(tmp_path, monkeyp
     label_lines = labels_path.read_text(encoding="utf-8").splitlines()
     assert label_lines == [event.to_json_line()]
     assert all(isinstance(json.loads(line), dict) for line in label_lines)
+
+
+def test_injector_gives_up_when_the_broker_is_unreachable(tmp_path, monkeypatch):
+    from src.faults import injector
+
+    class DeadClient:
+        def connect_async(self, host, port, keepalive):
+            pass
+
+        def loop_start(self):
+            pass  # never calls on_connect
+
+        def loop_stop(self):
+            pass
+
+        def publish(self, topic, payload):
+            raise AssertionError("must not publish without a connection")
+
+    monkeypatch.setattr(injector, "make_client", lambda: DeadClient())
+    monkeypatch.setattr(injector, "CONNECT_TIMEOUT_S", 0.05)
+
+    labels_path = tmp_path / "labels" / "faults.jsonl"
+    assert injector.main(["--duration", "1", "--labels", str(labels_path)]) == 1
+    assert not labels_path.exists()
+
+
+def test_labels_from_earlier_runs_are_kept(tmp_path, monkeypatch):
+    from src.faults import injector
+
+    now = datetime(2026, 10, 17, tzinfo=timezone.utc)
+
+    class FakeClient:
+        def connect_async(self, host, port, keepalive):
+            pass
+
+        def loop_start(self):
+            self.on_connect(self, None, {}, 0)
+
+        def loop_stop(self):
+            pass
+
+        def disconnect(self):
+            pass
+
+        def publish(self, topic, payload):
+            pass
+
+    class OneEventSensor:
+        def __init__(self, sensor_id, sensor_type, rng):
+            self.sensor_id = sensor_id
+
+        def step(self, tick):
+            return 1.0, None
+
+        def close(self, tick):
+            if self.sensor_id == "temp-01":
+                return FaultEvent("temp-01", "dropout", tick, tick)
+            return None
+
+    monkeypatch.setattr(injector, "SensorSim", OneEventSensor)
+    monkeypatch.setattr(injector, "make_client", lambda: FakeClient())
+
+    labels_path = tmp_path / "faults.jsonl"
+    labels_path.write_text("earlier run\n", encoding="utf-8")
+
+    assert injector.main(["--duration", "0", "--labels", str(labels_path)],
+                         clock=lambda: now) == 0
+
+    assert labels_path.read_text(encoding="utf-8").splitlines() == [
+        "earlier run",
+        FaultEvent("temp-01", "dropout", now, now).to_json_line(),
+    ]

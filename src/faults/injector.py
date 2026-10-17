@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import random
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ from src.faults.faults import SensorSim
 
 log = logging.getLogger("fault_simulator")
 TOPIC = "sensors/readings"
+CONNECT_TIMEOUT_S = 10
 SENSORS = (
     ("temp-01", "temperature"),
     ("vib-01", "vibration"),
@@ -60,12 +62,24 @@ def main(argv=None, clock=None):
     label_path.parent.mkdir(parents=True, exist_ok=True)
     client = make_client()
 
+    connected = threading.Event()
+
+    def on_connect(client, userdata, flags, reason_code, properties=None):
+        if reason_code == 0:
+            connected.set()
+
+    client.on_connect = on_connect
+
     log.info("connecting asynchronously to %s:%s", host, port)
     client.connect_async(host, port, keepalive=60)
     client.loop_start()
+    if not connected.wait(timeout=CONNECT_TIMEOUT_S):
+        client.loop_stop()
+        log.error("no broker connection at %s:%s after %ss", host, port, CONNECT_TIMEOUT_S)
+        return 1
 
     try:
-        with label_path.open("w", encoding="utf-8") as labels:
+        with label_path.open("a", encoding="utf-8") as labels:
             try:
                 deadline = time.monotonic() + args.duration
                 while time.monotonic() < deadline:
