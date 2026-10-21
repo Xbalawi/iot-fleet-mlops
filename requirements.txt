@@ -4,3 +4,7 @@ pandas
 
 pyarrow
 pytest
+
+numpy
+
+scikit-learn

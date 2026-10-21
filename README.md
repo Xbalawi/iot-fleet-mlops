@@ -35,6 +35,22 @@ git submodule update --init
 v1's simulator is replaced by the fault injector during experiments. It publishes the
 same messages, with faults injected on purpose.
 
+## Results (baseline, test run)
+
+Isolation Forest trained on the first run, scored on the second run, per sensor type.
+Dropouts use a gap rule (a reading arriving more than 3x later than usual), because a missing row cannot be scored.
+
+| Fault | Detector | Result |
+|---|---|---|
+| Spike | Isolation Forest | 43 / 49 caught (recall 0.88) |
+| Drift | Isolation Forest | 7 / 357 caught (recall 0.02, chance level) |
+| Dropout | Gap rule | 16 / 16 caught, 0 false alarms (both runs, no training needed) |
+
+False alarm rate on normal readings: 0.3%.
+
+**Takeaway:** a point-anomaly model catches sudden faults but is blind to slow drift.
+Drift is the case for monitoring the data distribution over time (Evidently, Week 2).
+
 ## Quick start
 
 ```bash
