@@ -128,7 +128,7 @@ which equals 3 sensors x 1,489 ticks minus 8 dropouts x 10 readings.
 
 - [x] Repo, v1 submodule, MQTT subscriber, Parquet storage
 - [x] Fault injector with ground-truth labels
-- [ ] Rolling-window features and Isolation Forest baseline
+- [x] Rolling-window features and Isolation Forest baseline
 - [ ] MLflow tracking, FastAPI serving in Docker, CI with GitHub Actions
 - [ ] Drift monitoring and drift-triggered retraining with a promotion rule
 - [ ] Shadow-mode rollout with automatic rollback, validation on a real dataset, public deployment
