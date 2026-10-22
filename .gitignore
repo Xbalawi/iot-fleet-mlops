@@ -222,3 +222,7 @@ __marimo__/
 
 # The following is added to ignore the data folder in the iot-fleet-mlops project
 data/
+
+# The following is added to ignore the mlflow database and mlruns folder in the iot-fleet-mlops project
+mlflow.db
+mlruns/

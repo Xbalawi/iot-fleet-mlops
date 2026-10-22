@@ -8,3 +8,5 @@ pytest
 numpy
 
 scikit-learn
+
+mlflow

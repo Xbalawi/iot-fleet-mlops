@@ -5,14 +5,15 @@ import pandas as pd
 from sklearn.ensemble import IsolationForest
 
 from src.model.data import label_readings, load_labels, load_readings
-from src.model.features import add_features, drop_warm_up
-from src.model.gaps import evaluate_dropouts
-
+from src.model.features import LONG_WINDOW, SHORT_WINDOW, add_features, drop_warm_up
+from src.model.gaps import GAP_THRESHOLD, evaluate_dropouts
+from src.model.tracking import build_metrics, log_run
 
 MODELED_TYPES = ("temperature", "vibration")  # occupancy is binary and never faults
 MODEL_FEATURES = ["value", "diff1", "z_short", "z_long", "mean_shift"]
 CONTAMINATION = 0.02
 SEED = 42
+N_ESTIMATORS = 200
 
 
 def split_by_run(df):
@@ -33,7 +34,7 @@ def train_models(train, contamination=CONTAMINATION, seed=SEED):
         if part.empty:
             continue
         model = IsolationForest(
-            n_estimators=200, contamination=contamination, random_state=seed
+            n_estimators=N_ESTIMATORS, contamination=contamination, random_state=seed
         )
         models[sensor_type] = model.fit(part[MODEL_FEATURES])
     return models
@@ -79,8 +80,43 @@ def evaluate(scored):
     }
     return pd.DataFrame(rows), summary
 
-
 def main():
+    labels = load_labels()
+    readings = label_readings(load_readings(), labels)
+    with_features = add_features(readings)
+    featured = drop_warm_up(with_features)
+    train, test = split_by_run(featured)
+    models = train_models(train)
+    table, summary = evaluate(predict(models, test))
+    dropouts = evaluate_dropouts(with_features, labels)
+
+    print(f"train rows: {len(train)}   test rows: {len(test)}")
+    print(table.round(3).to_string(index=False))
+    print(f"precision: {summary['precision']:.3f}   false alarm rate: {summary['false_alarm_rate']:.3f}")
+    print(
+        f"dropouts: {dropouts['events']}   caught: {dropouts['caught']}"
+        f"   recall: {dropouts['recall']:.3f}   false alarms: {dropouts['false_alarms']}"
+    )
+
+    params = {
+        "model": "IsolationForest",
+        "n_estimators": N_ESTIMATORS,
+        "contamination": CONTAMINATION,
+        "seed": SEED,
+        "short_window": SHORT_WINDOW,
+        "long_window": LONG_WINDOW,
+        "gap_threshold": GAP_THRESHOLD,
+        "train_rows": len(train),
+        "test_rows": len(test),
+    }
+    run_id = log_run(params, build_metrics(table, summary, dropouts))
+    print(f"logged to MLflow, run id: {run_id}")
+
+if __name__ == "__main__":
+    main()
+
+
+""" def main():
     labels = load_labels()
     readings = label_readings(load_readings(), labels)
     with_features = add_features(readings)
@@ -97,8 +133,4 @@ def main():
     print(
         f"dropouts: {dropouts['events']}   caught: {dropouts['caught']}"
         f"   recall: {dropouts['recall']:.3f}   false alarms: {dropouts['false_alarms']}"
-    )
-
-
-if __name__ == "__main__":
-    main()
+    ) """
