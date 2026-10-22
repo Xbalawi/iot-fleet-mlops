@@ -48,6 +48,15 @@ Dropouts use a gap rule (a reading arriving more than 3x later than usual), beca
 
 False alarm rate on normal readings: 0.3%.
 
+## Experiment tracking
+
+Every training run is recorded in MLflow (parameters, metrics and the trained models):
+
+    python -m src.model.train
+    mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5001
+
+Then open http://localhost:5001.
+
 **Takeaway:** a point-anomaly model catches sudden faults but is blind to slow drift.
 Drift is the case for monitoring the data distribution over time (Evidently, Week 2).
 
@@ -129,6 +138,6 @@ which equals 3 sensors x 1,489 ticks minus 8 dropouts x 10 readings.
 - [x] Repo, v1 submodule, MQTT subscriber, Parquet storage
 - [x] Fault injector with ground-truth labels
 - [x] Rolling-window features and Isolation Forest baseline
-- [ ] MLflow tracking, FastAPI serving in Docker, CI with GitHub Actions
+- [x] MLflow tracking, FastAPI serving in Docker, CI with GitHub Actions
 - [ ] Drift monitoring and drift-triggered retraining with a promotion rule
 - [ ] Shadow-mode rollout with automatic rollback, validation on a real dataset, public deployment

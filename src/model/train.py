@@ -109,7 +109,7 @@ def main():
         "train_rows": len(train),
         "test_rows": len(test),
     }
-    run_id = log_run(params, build_metrics(table, summary, dropouts))
+    run_id = log_run(params, build_metrics(table, summary, dropouts), models=models)
     print(f"logged to MLflow, run id: {run_id}")
 
 if __name__ == "__main__":
