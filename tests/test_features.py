@@ -114,3 +114,14 @@ def test_the_input_dataframe_is_not_modified():
     before = list(df.columns)
     add_features(df)
     assert list(df.columns) == before
+
+
+def test_an_existing_run_id_column_is_respected():
+    rows = [("A", i, v) for i, v in enumerate(VALUES)]
+    rows += [("A", 100 + i, v) for i, v in enumerate(VALUES)]
+    df = frame(rows)
+    df["run_id"] = 0  # the caller says: one run, whatever the pause
+
+    out = add_features(df, short_window=2, long_window=4)
+
+    assert out["z_long"].isna().sum() == 4  # one warm-up only: the pause did not split the run

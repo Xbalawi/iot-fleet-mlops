@@ -10,3 +10,7 @@ numpy
 scikit-learn
 
 mlflow
+
+fastapi
+uvicorn
+httpx

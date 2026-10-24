@@ -6,6 +6,8 @@ import mlflow
 import mlflow.sklearn
 import sklearn
 
+from src.model.export import TRUSTED_TYPES
+
 TRACKING_URI = "sqlite:///mlflow.db"
 EXPERIMENT = "iot-fleet-anomaly"
 MODEL_TAG_PREFIX = "model_uri."
@@ -13,7 +15,7 @@ MODEL_TAG_PREFIX = "model_uri."
 # Isolation Forests are made of decision trees. skops refuses to load their node
 # storage unless we trust it explicitly. We trust only this one type, because we
 # train and save these models ourselves.
-TRUSTED_TYPES = ["sklearn.tree._tree.Tree"]
+# TRUSTED_TYPES = ["sklearn.tree._tree.Tree"]
 
 
 def build_metrics(table, summary, dropouts):

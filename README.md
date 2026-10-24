@@ -87,6 +87,32 @@ python -m pytest                      # 41 tests
    python -m src.faults.injector --seed 42 --duration 300 --interval 0.2
 ```
 
+## Serving
+
+Export the models of a training run, build the image, and start the service:
+
+    python -m src.model.export <run_id>
+    docker build -t iot-fleet-mlops:dev .
+    docker run --rm -p 8765:8000 iot-fleet-mlops:dev
+
+- `GET /health` shows the loaded models and the run they came from.
+- `POST /predict` scores one reading (`sensor_id`, `type`, `value`, `timestamp`).
+  A sensor answers `warming_up` until it has 50 previous readings.
+- `http://127.0.0.1:8765/docs` is an interactive test page.
+
+Replay a recorded run through the service and grade it:
+
+    python -m src.api.replay
+
+The replay gives exactly the offline results (spike 43/49, drift 7/357), which shows
+that serving and training compute the same features.
+
+
+**Design choices**
+- The scorer builds features with the same code as training, so the two cannot drift apart.
+- The service runs a single worker, because each sensor's recent readings are kept in memory.
+- The image does not contain MLflow: training exports the models to `model_store/`, and the service reads that folder.
+
 | Setting | Where | Default |
 |---|---|---|
 | `BROKER_HOST`, `BROKER_PORT` | env, both programs | `localhost`, `1883` |

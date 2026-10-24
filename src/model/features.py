@@ -8,6 +8,7 @@ SHORT_WINDOW = 10
 LONG_WINDOW = 50
 
 FEATURE_COLUMNS = ["value", "diff1", "z_short", "z_long", "mean_shift", "gap_ratio"]
+MODEL_FEATURES = ["value", "diff1", "z_short", "z_long", "mean_shift"]  # what the Isolation Forest sees
 
 
 def assign_runs(readings, gap=RUN_GAP):
@@ -29,7 +30,13 @@ def add_features(readings, short_window=SHORT_WINDOW, long_window=LONG_WINDOW):
     baseline up and hide. The first readings of each run and sensor do not
     have enough history yet; their features are NaN (the warm-up).
     """
-    df = assign_runs(readings)
+    """ df = assign_runs(readings)
+    df = df.sort_values(["run_id", "sensor_id", "timestamp"]).reset_index(drop=True) """
+
+    if "run_id" in readings.columns:
+        df = readings.copy()  # the caller already decided where the runs start
+    else:
+        df = assign_runs(readings)
     df = df.sort_values(["run_id", "sensor_id", "timestamp"]).reset_index(drop=True)
 
     keys = [df["run_id"], df["sensor_id"]]
