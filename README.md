@@ -1,3 +1,5 @@
+![CI](https://github.com/Xbalawi/iot-fleet-mlops/actions/workflows/ci.yml/badge.svg)
+
 # iot-fleet-mlops
 
 Closed-loop MLOps for IoT fleets: drift detection, automatic retraining, and
