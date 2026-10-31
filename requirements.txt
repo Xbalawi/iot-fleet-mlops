@@ -14,3 +14,7 @@ mlflow
 fastapi
 uvicorn
 httpx
+
+scipy
+
+evidently==0.7.23

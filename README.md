@@ -49,6 +49,17 @@ Dropouts use a gap rule (a reading arriving more than 3x later than usual), beca
 
 False alarm rate on normal readings: 0.3%.
 
+## Drift monitoring
+
+The model judges one reading at a time, so it misses slow drift (2% recall). A drift monitor
+compares each window of 100 readings with known-good reference data (KS test, p < 0.001).
+It catches 3 of 4 drift windows with 0 false alarms in 24 clean windows.
+
+    python -m src.model.drift     # grade the monitor against the labels
+    python -m src.model.report    # save an Evidently report for the strongest drift window
+
+![Evidently drift report](docs/drift-report.png)
+
 ## Experiment tracking
 
 Every training run is recorded in MLflow (parameters, metrics and the trained models):
