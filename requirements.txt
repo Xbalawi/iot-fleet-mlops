@@ -1,11 +1,11 @@
 paho-mqtt
 
-pandas
+pandas==2.2.3
 
 pyarrow
 pytest
 
-numpy
+numpy==2.2.6
 
 scikit-learn
 
