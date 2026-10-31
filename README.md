@@ -60,6 +60,23 @@ It catches 3 of 4 drift windows with 0 false alarms in 24 clean windows.
 
 ![Evidently drift report](docs/drift-report.png)
 
+## Retraining with a promotion rule
+
+    python -m src.model.pipeline            # retrain only if drift is sustained
+    python -m src.model.pipeline --force    # judge a candidate even without drift
+    python -m src.model.pipeline --apply    # if promoted, replace the models in model_store/
+
+1. **Trigger:** at least 2 of a sensor's last 5 windows must show drift (KS test, p < 0.001).
+2. **Candidate:** new models trained only on the recent readings, for the triggered sensor types.
+3. **Promotion rule:** the candidate and the current model are scored on held-out labelled data.
+   The candidate must not lose recall or add false alarms beyond a small tolerance, and it must
+   gain at least 2 extra spikes caught (or cut the false alarm rate), so one lucky spike cannot
+   trigger a swap.
+4. Every attempt is logged to MLflow with the decision and its reasons.
+
+Drift is not always a reason to retrain: in this project drift is a sensor fault, and a model
+retrained on faulty readings would learn that the fault is normal. The rule exists to prevent that.
+
 ## Experiment tracking
 
 Every training run is recorded in MLflow (parameters, metrics and the trained models):
