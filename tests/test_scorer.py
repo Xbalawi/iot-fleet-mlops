@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.model.features import add_features, drop_warm_up
+from src.model.features import MODEL_FEATURES, add_features, drop_warm_up
 from src.model.scorer import Scorer
 from src.model.tracking import log_run
 from src.model.train import predict, train_models
@@ -140,3 +140,11 @@ def test_from_dir_scores_like_the_original_models(tmp_path):
     assert got["status"] == "ok"
     assert got["score"] == pytest.approx(expected["score"])
     assert from_dir.run_id == "abc123"
+
+
+def test_a_single_forest_pass_flags_exactly_what_predict_flags():
+    model = fitted_models()["temperature"]
+    rng = np.random.default_rng(3)
+    X = pd.DataFrame(rng.normal(0, 4, size=(500, 5)), columns=MODEL_FEATURES)
+    raw = model.score_samples(X)
+    assert ((raw < model.offset_) == (model.predict(X) == -1)).all()

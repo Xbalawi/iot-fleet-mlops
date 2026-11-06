@@ -62,6 +62,45 @@ def add_features(readings, short_window=SHORT_WINDOW, long_window=LONG_WINDOW):
     df["gap_ratio"] = gap_s / typical_gap
     return df
 
+def _mean_and_std(values):
+    """Mean and sample std (ddof=1, like pandas rolling) of one window.
+
+    A flat window has no noise to measure, so its std is NaN, as in add_features.
+    """
+    mean = float(values.mean())
+    if values.max() == values.min():
+        return mean, np.nan
+    return mean, float(values.std(ddof=1))
+
+
+def last_row_features(past_values, value, short_window=SHORT_WINDOW, long_window=LONG_WINDOW):
+    """MODEL_FEATURES of one new reading, as a list in MODEL_FEATURES order.
+
+    past_values: the earlier readings of the same sensor, oldest first.
+    These are the numbers add_features gives for the last row, computed
+    straight from the last few values instead of through a whole DataFrame,
+    which is what makes scoring one reading at a time fast. NaN wherever
+    add_features gives NaN (not enough history, or a flat window).
+    tests/test_online_features.py keeps the two in agreement.
+    """
+    past = np.asarray(past_values, dtype=float)
+    value = float(value)
+    if len(past) == 0:
+        return [value, np.nan, np.nan, np.nan, np.nan]
+
+    mean_short = std_short = mean_long = std_long = np.nan
+    if len(past) >= short_window:
+        mean_short, std_short = _mean_and_std(past[-short_window:])
+    if len(past) >= long_window:
+        mean_long, std_long = _mean_and_std(past[-long_window:])
+
+    return [
+        value,
+        value - past[-1],
+        (value - mean_short) / std_short,
+        (value - mean_long) / std_long,
+        (mean_short - mean_long) / std_long,
+    ]
 
 def drop_warm_up(df):
     """Keep only the rows whose features are all available."""
