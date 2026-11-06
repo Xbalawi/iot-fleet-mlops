@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
-
+from src.api.metrics import install_metrics
 from src.model.scorer import Scorer
 # from src.model.tracking import TRACKING_URI
 
@@ -81,6 +81,7 @@ def create_app(scorer=None, run_id=None):
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error))
 
+    install_metrics(app)
     return app
 
 
