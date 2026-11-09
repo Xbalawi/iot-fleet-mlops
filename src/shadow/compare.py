@@ -9,7 +9,8 @@ accuracy. Accuracy was already checked offline, by the promotion rule in
 src/model/retrain.py.
 
 A "pair" is a reading that both models scored. A "failure" is a reading the
-champion scored and the challenger could not (an exception, or no score).
+champion scored and the challenger could not (no score), or any exception the
+challenger raised.
 """
 
 from dataclasses import dataclass
