@@ -1,10 +1,10 @@
 """Replay recorded readings through the running service and grade its answers."""
 
 import argparse
+import http.client
 import json
 import sys
-import urllib.error
-import urllib.request
+import urllib.parse
 
 import pandas as pd
 
@@ -19,19 +19,39 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def post_reading(url, row):
-    """Send one reading to the service and return its answer as a dict."""
-    body = json.dumps(
-        {
-            "sensor_id": row.sensor_id,
-            "type": row.type,
-            "value": float(row.value),
-            "timestamp": row.timestamp.isoformat(),
-        }
-    ).encode()
-    request = urllib.request.Request(url, body, {"Content-Type": "application/json"})
-    with urllib.request.urlopen(request) as response:
-        return json.load(response)
+class ServiceError(Exception):
+    def __init__(self, status, text):
+        super().__init__(f"{status}: {text}")
+        self.status = status
+        self.text = text
+
+
+class Client:
+    """One connection reused for every reading (a new connection per reading exhausts Windows ports)."""
+
+    def __init__(self, url):
+        parts = urllib.parse.urlsplit(url)
+        self.path = parts.path or "/"
+        self.connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=30)
+
+    def post(self, row):
+        body = json.dumps(
+            {
+                "sensor_id": row.sensor_id,
+                "type": row.type,
+                "value": float(row.value),
+                "timestamp": row.timestamp.isoformat(),
+            }
+        )
+        self.connection.request("POST", self.path, body, {"Content-Type": "application/json"})
+        response = self.connection.getresponse()
+        text = response.read().decode()  # always read the full body, or the connection can't be reused
+        if response.status != 200:
+            raise ServiceError(response.status, text)
+        return json.loads(text)
+
+    def close(self):
+        self.connection.close()
 
 
 def main(argv=None):
@@ -41,16 +61,19 @@ def main(argv=None):
     test_run = readings[readings["run_id"] == readings["run_id"].max()]  # the run the models never saw
     print(f"replaying {len(test_run)} readings to {args.url}")
 
+    client = Client(args.url)
     answers = []
     try:
         for n, row in enumerate(test_run.itertuples(), start=1):
-            answers.append(post_reading(args.url, row))
+            answers.append(client.post(row))
             if n % 500 == 0:
                 print(f"sent {n}/{len(test_run)}")
-    except urllib.error.HTTPError as error:
-        print(f"the service answered {error.code}: {error.read().decode()}")
+    except ServiceError as error:
+        print(f"the service answered {error.status}: {error.text}")
         print("It remembers the readings it has already seen. Restart the service, then try again.")
         sys.exit(1)
+    finally:
+        client.close()
 
     answers = pd.DataFrame(answers, index=test_run.index)
     scored = test_run.copy()

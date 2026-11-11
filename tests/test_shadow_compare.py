@@ -1,7 +1,6 @@
 import pytest
 
-from src.shadow.compare import ShadowStats, decide
-
+from src.shadow.compare import ShadowStats, decide, decide_watch
 
 def test_record_pair_counts_every_case():
     s = ShadowStats()
@@ -90,3 +89,33 @@ def test_every_broken_guardrail_is_reported():
     result = decide(ShadowStats(paired=100, only_challenger=30, failures=10))
     assert result["action"] == "rollback"
     assert len(result["reasons"]) == 2
+
+def test_a_watched_model_that_storms_is_rolled_back():
+    result = decide_watch(ShadowStats(paired=200, both=10, only_champion=40))  # 25% of readings flagged
+    assert result["action"] == "rollback"
+    assert any("alert storm" in reason for reason in result["reasons"])
+
+
+def test_a_watched_model_with_far_more_alerts_than_the_previous_one_is_rolled_back():
+    result = decide_watch(ShadowStats(paired=1000, both=10, only_champion=40))  # 5%: no storm
+    assert result["action"] == "rollback"
+    assert len(result["reasons"]) == 1
+    assert "50 alerts" in result["reasons"][0]
+
+
+def test_a_slow_watched_model_is_rolled_back():
+    stats = ShadowStats(paired=200, both=5, champion_seconds=8.0, challenger_seconds=2.0)
+    result = decide_watch(stats)
+    assert result["action"] == "rollback"
+    assert "4.0x slower" in result["reasons"][0]
+
+
+def test_the_watch_keeps_watching_until_there_are_enough_readings():
+    result = decide_watch(ShadowStats(paired=100, both=2))
+    assert result["action"] == "continue"
+    assert "100 of 300" in result["reasons"][0]
+
+
+def test_the_watch_confirms_after_enough_calm_readings():
+    result = decide_watch(ShadowStats(paired=300, both=8, only_champion=1, only_challenger=1))
+    assert result["action"] == "confirm"

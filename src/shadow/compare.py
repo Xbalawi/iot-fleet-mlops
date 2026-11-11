@@ -23,6 +23,8 @@ MAX_ERROR_RATE = 0.01
 MAX_ALERT_RATE = 0.10  # ceiling on the share of readings the challenger flags
 MAX_ALERT_RATIO = 3.0  # challenger alerts compared with the champion's
 MAX_LATENCY_RATIO = 3.0  # challenger scoring time compared with the champion's
+WATCH_PAIRED = 300  # paired readings a freshly promoted model is watched for
+
 
 
 @dataclass
@@ -148,5 +150,59 @@ def decide(
             f"safe over {stats.paired} readings: {stats.failures} failures, "
             f"alert rate {stats.challenger_alert_rate:.1%}, "
             f"{stats.overlap:.0%} of the champion's alerts shared"
+        ],
+    }
+
+def decide_watch(
+    stats,
+    watch_paired=WATCH_PAIRED,
+    min_previous_alerts=MIN_CHAMPION_ALERTS,
+    rollback_min_readings=ROLLBACK_MIN_READINGS,
+    max_alert_rate=MAX_ALERT_RATE,
+    max_alert_ratio=MAX_ALERT_RATIO,
+    max_latency_ratio=MAX_LATENCY_RATIO,
+):
+    """Judge a freshly promoted model that is now SERVING, against the previous model still shadowing it.
+
+    The stats are read the other way round from decide(): "champion" is the model
+    that serves (the new one) and "challenger" is the previous model running in
+    shadow, kept warm as the way back.
+    Returns {"action": "continue" | "confirm" | "rollback", "reasons": [...]}.
+    """
+    problems = []
+    if stats.paired >= rollback_min_readings:
+        serving_rate = stats.champion_alerts / stats.paired
+        if serving_rate > max_alert_rate:
+            problems.append(
+                f"alert storm: the new model flagged {serving_rate:.1%} of readings (limit {max_alert_rate:.0%})"
+            )
+        if (
+            stats.challenger_alerts >= min_previous_alerts
+            and stats.champion_alerts > max_alert_ratio * stats.challenger_alerts
+        ):
+            problems.append(
+                f"the new model raised {stats.champion_alerts} alerts against the previous model's "
+                f"{stats.challenger_alerts} (limit {max_alert_ratio:g}x)"
+            )
+        if stats.challenger_seconds:
+            ratio = stats.champion_seconds / stats.challenger_seconds
+            if ratio > max_latency_ratio:
+                problems.append(
+                    f"the new model is {ratio:.1f}x slower than the previous one (limit {max_latency_ratio:g}x)"
+                )
+    if problems:
+        return {"action": "rollback", "reasons": problems}
+
+    if stats.paired < watch_paired:
+        return {
+            "action": "continue",
+            "reasons": [f"watching the new model: {stats.paired} of {watch_paired} paired readings"],
+        }
+    return {
+        "action": "confirm",
+        "reasons": [
+            f"the new model behaved over {stats.paired} readings: alert rate "
+            f"{stats.champion_alerts / stats.paired:.1%}, {stats.champion_alerts} alerts against "
+            f"the previous model's {stats.challenger_alerts}"
         ],
     }

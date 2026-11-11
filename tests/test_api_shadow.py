@@ -108,3 +108,28 @@ def test_the_challenger_is_loaded_from_a_folder(monkeypatch, tmp_path):
 
     assert body["enabled"] is True
     assert body["challenger_run_id"] == "cand"
+
+class Scripted:
+    models = {"temperature": object()}
+
+    def __init__(self, run_id, flagged):
+        self.run_id = run_id
+        self.flagged = flagged
+        self.seen = []
+
+    def score(self, reading):
+        self.seen.append(reading)
+        return {"status": "ok", "is_anomaly": self.flagged, "score": 0.5}
+
+
+def test_the_service_answers_with_whichever_model_the_rollout_is_serving():
+    old, new = Scripted("old", False), Scripted("new", True)
+    app = create_app(old, run_id="old", challenger=new)
+    client = TestClient(app)
+
+    runner = app.state.shadow
+    runner.serving, runner.shadow = new, old  # what a promotion does
+
+    assert client.get("/health").json()["model_run_id"] == "new"
+    assert client.post("/predict", json=GOOD).json()["is_anomaly"] is True
+    assert len(new.seen) == 1
