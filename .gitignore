@@ -232,3 +232,6 @@ reports/model_candidate/
 
 # The following is added to ignore the model_candidate folders in the iot-fleet-mlops project
 model_candidate_*/
+
+# The following is added to ignore the skab folder in the iot-fleet-mlops project
+data/skab/

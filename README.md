@@ -129,6 +129,47 @@ That last metric exposed a real problem. At 15 messages per second (about 17 tim
 
 Reproduce the profile with `python -m scripts.profile_scorer`.
 
+## Safe rollout: shadow mode
+
+A new model is never switched on blindly. Set `CHALLENGER_DIR` and the service runs the challenger **in shadow**: it scores every reading silently next to the serving model, and its answers are never returned. Live feeds have no labels, so the rules judge *safety and consistency*, not accuracy:
+
+| Verdict | When | What happens |
+|---|---|---|
+| reject | errors, an alert storm (>10% of readings), far more alerts than the serving model, or much slower | the challenger is dropped, the serving model never changed |
+| hold | it shares less than half of the serving model's alerts | stays in shadow, one event logged, a person decides |
+| promote | 300 paired readings, safe and consistent | it takes over, and the **previous model keeps shadowing it** as a warm way back |
+| rollback | the promoted model misbehaves during the next watch | the previous model serves again instantly, with no warm-up |
+| confirm | 300 calm readings after a promotion | the rollout ends |
+
+Every transition is recorded with a timestamp and reasons at `GET /shadow`. Tested on the real replay data with three challengers:
+
+| Challenger | Result | Replay result for the user |
+|---|---|---|
+| identical copy | promoted at 300 readings, confirmed 300 later | unchanged (43/49 spikes, precision 0.862) |
+| flags every reading | rejected after 100 readings: "alert storm: 100.0% of readings (limit 10%)" | unchanged |
+| flags nothing | held for review: "shares only 0% of the champion's alerts" | unchanged |
+
+The broken models never changed a single answer. Reproduce with `python -m scripts.make_candidate storm|silent --out <folder>`.
+
+
+## Validation on real data (SKAB)
+
+The fault injector tests the pipeline on faults I designed. To check it against something I did not design, I ran the same Isolation Forest code on [SKAB](https://github.com/waico/SKAB), a public benchmark of real sensor data from a water-circulation testbed (8 sensor columns, 1 reading per second, labelled anomalies, GPL-3.0, downloaded at run time and not committed). `python -m scripts.fetch_skab`, then `python -m scripts.eval_skab_variants`.
+
+SKAB faults are one long sustained stretch per experiment (about a third of each file), not short spikes. 33 experiments were graded, after a 50-reading warm-up, with one forest per sensor column and an alert when at least k columns flag the same second. Random alerts would be right 47.5% of the time.
+
+| Variant | Alert when | Precision | Recall | False alarms | Faults detected | Median delay | False-alarm seconds per file |
+|---|---|---|---|---|---|---|---|
+| trained once on the anomaly-free recording | ≥ 1 of 8 | 0.505 | 0.808 | 0.715 | 33/33 | 0 s | 304 |
+| same, without the raw `value` feature | ≥ 2 of 8 | 0.655 | 0.050 | 0.024 | 33/33 | 33 s | 10 |
+| calibrated on each file's first normal seconds | ≥ 3 of 8 | 0.781 | 0.031 | 0.008 | 31/33 | 35 s | 3.4 |
+
+What this says, honestly:
+- Trained once and used as is, the model is barely better than random on real machines: baselines shift between sessions, and the forest reads that shift as a fault (71% of normal seconds flagged).
+- Dropping the raw level and calibrating per machine makes the alarm quiet and trustworthy, and it still catches 31 of 33 faults about 35 s after they start. It sees only a few percent of the faulty seconds, because a rolling-window detector absorbs a sustained shift as the new normal within a minute.
+- Even with per-file calibration, 36% of normal seconds were flagged with one column, so the baseline also drifts within a single experiment. I have not isolated why.
+- The three variants were compared on the same data after the first result, so treat the best row as an exploratory finding, not a clean test-set score.
+
 ## Known limits
 
 - **Outages lose readings.** If the service goes down after startup, the bridge counts the failed readings and moves on; there is no retry or buffer.
@@ -136,6 +177,8 @@ Reproduce the profile with `python -m scripts.profile_scorer`.
 - **Reading age compares clocks.** The metric subtracts the reading's timestamp from the service's clock. For replays of recorded data it shows how old the recording is, not lag.
 - **Synthetic faults.** All results are on injected faults from the v1 simulator. Validation on a real public dataset is on the roadmap.
 - **The bridge only hears what is published after it subscribes.** Readings sent while it waits for the service are not delivered to it at all.
+- The rollout state lives in memory: a restart goes back to the model in `MODEL_DIR`.
+- Shadow mode doubles the scoring work per reading (about 59 ms to about 122 ms in Docker), so use a slower feed (`--interval 0.5`) when the MQTT bridge runs with a challenger.
 
 ## Built on iot-fleet-monitor v1.0
 
@@ -288,6 +331,6 @@ which equals 3 sensors x 1,489 ticks minus 8 dropouts x 10 readings.
 - [x] MLflow tracking, FastAPI serving in Docker, CI with GitHub Actions
 - [x] Drift monitoring and drift-triggered retraining with a promotion rule
 - [x] Alerts back to MQTT and service metrics
-- [ ] Shadow-mode rollout with automatic rollback
+- [x] Shadow-mode rollout with automatic rollback
 - [ ] Validation on a real public dataset
 - [ ] Public deployment
