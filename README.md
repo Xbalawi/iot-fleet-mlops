@@ -170,6 +170,15 @@ What this says, honestly:
 - Even with per-file calibration, 36% of normal seconds were flagged with one column, so the baseline also drifts within a single experiment. I have not isolated why.
 - The three variants were compared on the same data after the first result, so treat the best row as an exploratory finding, not a clean test-set score.
 
+
+### The drift monitor on SKAB: a negative result
+
+The drift monitor from the retraining pipeline (KS test of each 100-second window against a reference, alpha 0.001) is the tool I expected to suit SKAB's sustained faults, so I ran it unchanged (`python -m scripts.eval_skab_drift`).
+
+It did not work. Against the anomaly-free recording it flagged every fault window and also every clean window (four of the eight columns flagged 100% of both). Against each file's own first normal seconds it still flagged 89–95% of clean temperature and thermocouple windows. The signal is that the baseline of a real machine drifts slowly even when nothing is wrong (the loop warms up), so a monitor that compares against a fixed reference cannot separate "different from the start" from "faulty". Likely a second cause, not tested: a KS test assumes independent readings, and 1 Hz sensor readings are strongly autocorrelated, so its p-values are far too optimistic.
+
+What this means for the project: the monitor and the retraining trigger are validated on injected drift, not on real machine drift. A monitor that compares each window with the window before it, or a reference that follows slow legitimate drift, would be the next thing to try.
+
 ## Known limits
 
 - **Outages lose readings.** If the service goes down after startup, the bridge counts the failed readings and moves on; there is no retry or buffer.
