@@ -235,3 +235,6 @@ model_candidate_*/
 
 # The following is added to ignore the skab folder in the iot-fleet-mlops project
 data/skab/
+
+# The following is added to ignore the space_build folder in the iot-fleet-mlops project
+space_build/

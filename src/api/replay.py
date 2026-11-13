@@ -29,10 +29,18 @@ class ServiceError(Exception):
 class Client:
     """One connection reused for every reading (a new connection per reading exhausts Windows ports)."""
 
+    """ def __init__(self, url):
+        parts = urllib.parse.urlsplit(url)
+        self.path = parts.path or "/"
+        self.connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=30) """
+
     def __init__(self, url):
         parts = urllib.parse.urlsplit(url)
         self.path = parts.path or "/"
-        self.connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=30)
+        if parts.scheme == "https":
+            self.connection = http.client.HTTPSConnection(parts.hostname, parts.port or 443, timeout=30)
+        else:
+            self.connection = http.client.HTTPConnection(parts.hostname, parts.port or 80, timeout=30)
 
     def post(self, row):
         body = json.dumps(
