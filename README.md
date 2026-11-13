@@ -18,6 +18,20 @@ About 2 minutes, in this order:
 4. `/metrics` shows the time spent per call and the age of every reading.
 5. The drift report, and the retraining pipeline deciding whether a new model is good enough to replace the current one.
 
+## Live service
+
+The service is deployed on Render's free tier: **https://iot-fleet-mlops.onrender.com**
+
+- `/docs`: interactive API page, try `POST /predict` from your browser
+- `/health`: which model run is serving
+- `/metrics`: Prometheus metrics
+
+The first request after 15 idle minutes takes about a minute (the free instance sleeps), and a sleep resets the in-memory sensor history, so every sensor starts again with `warming_up`. To check the deployment I replayed the same 4378 held-out readings through the public URL: the result is identical to the local run (43/49 spikes caught, precision 0.862, false alarm rate 0.003).
+
+```powershell
+python -m src.api.replay --url https://iot-fleet-mlops.onrender.com/predict
+```
+
 ## How it works
 
 ```mermaid
@@ -188,6 +202,7 @@ What this means for the project: the monitor and the retraining trigger are vali
 - **The bridge only hears what is published after it subscribes.** Readings sent while it waits for the service are not delivered to it at all.
 - The rollout state lives in memory: a restart goes back to the model in `MODEL_DIR`.
 - Shadow mode doubles the scoring work per reading (about 59 ms to about 122 ms in Docker), so use a slower feed (`--interval 0.5`) when the MQTT bridge runs with a challenger.
+- The public instance is on a free tier: it sleeps when idle, and anyone can call `/predict`, so a visitor posting a far-future timestamp makes later readings for that sensor return 409 until the service restarts.
 
 ## Built on iot-fleet-monitor v1.0
 
