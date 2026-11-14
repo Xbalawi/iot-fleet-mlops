@@ -28,6 +28,8 @@ The service is deployed on Render's free tier: **https://iot-fleet-mlops.onrende
 
 The first request after 15 idle minutes takes about a minute (the free instance sleeps), and a sleep resets the in-memory sensor history, so every sensor starts again with `warming_up`. To check the deployment I replayed the same 4378 held-out readings through the public URL: the result is identical to the local run (43/49 spikes caught, precision 0.862, false alarm rate 0.003).
 
+In /docs, a reading needs a timezone in its timestamp (for example 2026-11-14T12:00:00Z), and a sensor is only scored after 50 earlier readings with increasing timestamps; until then it answers warming_up.
+
 ```powershell
 python -m src.api.replay --url https://iot-fleet-mlops.onrender.com/predict
 ```
@@ -40,7 +42,8 @@ flowchart LR
     B --> I["ingestion: Parquet by day"]
     I --> T["train + MLflow"]
     T --> M["model_store"]
-    M --> API["FastAPI scorer, /predict + /metrics"]
+    M --> SH["shadow rollout: promote or roll back"]
+    SH --> API["FastAPI scorer, /predict + /metrics"]
     B --> BR["alert bridge"]
     BR -->|POST /predict| API
     BR -->|alerts/anomaly| B
@@ -182,7 +185,7 @@ SKAB faults are one long sustained stretch per experiment (about a third of each
 
 What this says, honestly:
 - Trained once and used as is, the model is barely better than random on real machines: baselines shift between sessions, and the forest reads that shift as a fault (71% of normal seconds flagged).
-- Dropping the raw level and calibrating per machine makes the alarm quiet and trustworthy, and it still catches 31 of 33 faults about 35 s after they start. It sees only a few percent of the faulty seconds, because a rolling-window detector absorbs a sustained shift as the new normal within a minute.
+- Dropping the raw level and calibrating per machine makes the alarm much quieter, and it still catches 31 of 33 faults about 35 s after they start. It sees only a few percent of the faulty seconds, because a rolling-window detector absorbs a sustained shift as the new normal within a minute.
 - Even with per-file calibration, 36% of normal seconds were flagged with one column, so the baseline also drifts within a single experiment. I have not isolated why.
 - The three variants were compared on the same data after the first result, so treat the best row as an exploratory finding, not a clean test-set score.
 
@@ -202,7 +205,7 @@ What this means for the project: the monitor and the retraining trigger are vali
 - **Startup order is a bug source.** About 200 readings were lost because the alert bridge subscribed before the service was ready. It now waits for `/health`.
 - **A rollout without labels can only judge safety.** Live feeds have no ground truth, so the shadow rules check errors, alert storms, agreement with the serving model and speed, never accuracy. I tested them the only way that proves something: with deliberately broken challengers, which never changed a single answer.
 - **Faults I inject flatter the system.** On my own simulator the model scores 0.878 recall and the drift monitor works. On real machine data (SKAB) the same model was barely better than random, and the drift monitor fired on almost every window, because real baselines drift on their own. Validating on data I did not design was the most informative thing I did.
-- **Small environment details cost real time.** The replay opened a new connection per reading and exhausted Windows' local ports, and the free Docker option I planned to deploy on turned out to be paid. I now check limits first (memory: 179 MiB used of 512 MB available on the free instance) before choosing a platform.
+- **Small environment details cost real time.** The replay opened a new connection per reading and exhausted Windows' local ports, and the free Docker option I planned to deploy on turned out to be paid. I now check limits first (memory: 179 MiB measured locally, against what I understand to be 512 MB on the free instance).
 
 What I would do next: a drift monitor that compares each window with the one before it, labelled feedback to measure accuracy in production, rollout state that survives a restart, and authentication on the public endpoint.
 
