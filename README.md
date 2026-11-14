@@ -28,7 +28,7 @@ The service is deployed on Render's free tier: **https://iot-fleet-mlops.onrende
 
 The first request after 15 idle minutes takes about a minute (the free instance sleeps), and a sleep resets the in-memory sensor history, so every sensor starts again with `warming_up`. To check the deployment I replayed the same 4378 held-out readings through the public URL: the result is identical to the local run (43/49 spikes caught, precision 0.862, false alarm rate 0.003).
 
-In /docs, a reading needs a timezone in its timestamp (for example 2026-11-14T12:00:00Z), and a sensor is only scored after 50 earlier readings with increasing timestamps; until then it answers warming_up.
+In `/docs`, a reading needs a timezone in its timestamp (for example 2026-11-14T12:00:00Z), and a sensor is only scored after 50 earlier readings with increasing timestamps; until then it answers warming_up.
 
 ```powershell
 python -m src.api.replay --url https://iot-fleet-mlops.onrender.com/predict
