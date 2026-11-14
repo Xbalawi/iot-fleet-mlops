@@ -4,7 +4,7 @@
 Closed-loop MLOps for IoT fleets: drift detection, automatic retraining, and
 shadow-mode rollout, built on top of [iot-fleet-monitor](https://github.com/Xbalawi/iot-fleet-monitor) v1.0.
 
-**Status:** Week 2 done: baseline model, MLflow tracking, Dockerised service with CI, drift monitoring, retraining with a promotion rule, alerts back to MQTT and service metrics. Next (Week 3): shadow-mode rollout with automatic rollback, validation on a real dataset, public deployment.
+**Status:** all three weeks done: baseline model, MLflow tracking, Dockerised service with CI, drift monitoring, retraining with a promotion rule, alerts back to MQTT, service metrics, shadow-mode rollout with automatic rollback, validation on a real dataset (SKAB) and a public deployment.
 
 ## Demo
 
@@ -157,7 +157,7 @@ A new model is never switched on blindly. Set `CHALLENGER_DIR` and the service r
 
 Every transition is recorded with a timestamp and reasons at `GET /shadow`. Tested on the real replay data with three challengers:
 
-| Challenger | Result | Replay result for the user |
+| Challenger | Result | Replay result |
 |---|---|---|
 | identical copy | promoted at 300 readings, confirmed 300 later | unchanged (43/49 spikes, precision 0.862) |
 | flags every reading | rejected after 100 readings: "alert storm: 100.0% of readings (limit 10%)" | unchanged |
@@ -178,6 +178,8 @@ SKAB faults are one long sustained stretch per experiment (about a third of each
 | same, without the raw `value` feature | ≥ 2 of 8 | 0.655 | 0.050 | 0.024 | 33/33 | 33 s | 10 |
 | calibrated on each file's first normal seconds | ≥ 3 of 8 | 0.781 | 0.031 | 0.008 | 31/33 | 35 s | 3.4 |
 
+"Faults detected" means little when the alarm never stops: the first row fires constantly, which is what the 304 false-alarm seconds per file show.
+
 What this says, honestly:
 - Trained once and used as is, the model is barely better than random on real machines: baselines shift between sessions, and the forest reads that shift as a fault (71% of normal seconds flagged).
 - Dropping the raw level and calibrating per machine makes the alarm quiet and trustworthy, and it still catches 31 of 33 faults about 35 s after they start. It sees only a few percent of the faulty seconds, because a rolling-window detector absorbs a sustained shift as the new normal within a minute.
@@ -193,12 +195,23 @@ It did not work. Against the anomaly-free recording it flagged every fault windo
 
 What this means for the project: the monitor and the retraining trigger are validated on injected drift, not on real machine drift. A monitor that compares each window with the window before it, or a reference that follows slow legitimate drift, would be the next thing to try.
 
+## Lessons learned
+
+- **Guard the gap between training and serving.** The service computes features with a fast numpy function instead of the training pipeline, which is exactly how the two sides silently drift apart. Tests compare them on random data, short histories and flat windows, and the replay reproduces the offline result to the row (43/49 spikes). It still matched on the public deployment.
+- **Measure before you fix.** When alerts arrived up to a minute late, my first guesses were wrong (pandas, connection reuse). Profiling showed the real cost: the forest was evaluated twice per reading. Fixing that took the time per reading from about 150 ms to about 59 ms.
+- **Startup order is a bug source.** About 200 readings were lost because the alert bridge subscribed before the service was ready. It now waits for `/health`.
+- **A rollout without labels can only judge safety.** Live feeds have no ground truth, so the shadow rules check errors, alert storms, agreement with the serving model and speed, never accuracy. I tested them the only way that proves something: with deliberately broken challengers, which never changed a single answer.
+- **Faults I inject flatter the system.** On my own simulator the model scores 0.878 recall and the drift monitor works. On real machine data (SKAB) the same model was barely better than random, and the drift monitor fired on almost every window, because real baselines drift on their own. Validating on data I did not design was the most informative thing I did.
+- **Small environment details cost real time.** The replay opened a new connection per reading and exhausted Windows' local ports, and the free Docker option I planned to deploy on turned out to be paid. I now check limits first (memory: 179 MiB used of 512 MB available on the free instance) before choosing a platform.
+
+What I would do next: a drift monitor that compares each window with the one before it, labelled feedback to measure accuracy in production, rollout state that survives a restart, and authentication on the public endpoint.
+
 ## Known limits
 
 - **Outages lose readings.** If the service goes down after startup, the bridge counts the failed readings and moves on; there is no retry or buffer.
 - **One worker, on purpose.** The scorer keeps each sensor's recent readings in memory, so the service runs a single worker and answers requests one at a time.
 - **Reading age compares clocks.** The metric subtracts the reading's timestamp from the service's clock. For replays of recorded data it shows how old the recording is, not lag.
-- **Synthetic faults.** All results are on injected faults from the v1 simulator. Validation on a real public dataset is on the roadmap.
+- **Mostly synthetic faults.** The main results are on injected faults from the v1 simulator. The SKAB validation above shows that on real machine data the detector and the drift monitor are much weaker.
 - **The bridge only hears what is published after it subscribes.** Readings sent while it waits for the service are not delivered to it at all.
 - The rollout state lives in memory: a restart goes back to the model in `MODEL_DIR`.
 - Shadow mode doubles the scoring work per reading (about 59 ms to about 122 ms in Docker), so use a slower feed (`--interval 0.5`) when the MQTT bridge runs with a challenger.
@@ -356,5 +369,5 @@ which equals 3 sensors x 1,489 ticks minus 8 dropouts x 10 readings.
 - [x] Drift monitoring and drift-triggered retraining with a promotion rule
 - [x] Alerts back to MQTT and service metrics
 - [x] Shadow-mode rollout with automatic rollback
-- [ ] Validation on a real public dataset
-- [ ] Public deployment
+- [x] Validation on a real public dataset
+- [x] Public deployment
